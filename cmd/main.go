@@ -10,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -91,9 +90,43 @@ func formatTime(t time.Time) string {
 		h = 12
 	}
 	if m == 0 {
-		return strconv.Itoa(h) + period
+		return fmt.Sprintf("%d%s", h, period)
 	}
 	return fmt.Sprintf("%d:%02d%s", h, m, period)
+}
+
+// cleanDescription extracts the clean text from a description by splitting on
+// <br> tags and keeping segments up to (but not including) the first one that
+// contains any HTML tag.
+func cleanDescription(desc string) string {
+	var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+	// Normalize: treat both <br> and newlines as segment separators
+	normalized := strings.ReplaceAll(desc, "<br>", "\n")
+	segments := strings.Split(normalized, "\n")
+	var clean []string
+	for _, s := range segments {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if htmlTagRe.MatchString(s) {
+			break
+		}
+		// Stop at bare URLs
+		if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+			break
+		}
+		clean = append(clean, s)
+	}
+	result := strings.Join(clean, " ")
+	// Decode common HTML entities
+	result = strings.ReplaceAll(result, "&amp;", "&")
+	result = strings.ReplaceAll(result, "&lt;", "<")
+	result = strings.ReplaceAll(result, "&gt;", ">")
+	result = strings.ReplaceAll(result, "&quot;", "\"")
+	result = strings.ReplaceAll(result, "&#39;", "'")
+	return result
 }
 
 func buildMessage(events []Event) (string, error) {
@@ -106,10 +139,11 @@ func buildMessage(events []Event) (string, error) {
 	today := now.Format("2006-01-02")
 
 	type entry struct {
-		start  time.Time
-		end    time.Time
-		name   string
-		genres []string
+		start       time.Time
+		end         time.Time
+		name        string
+		description string
+		genres      []string
 	}
 
 	var entries []entry
@@ -131,45 +165,33 @@ func buildMessage(events []Event) (string, error) {
 		if strings.ToUpper(strings.TrimFunc(e.Summary, unicode.IsSpace)) == "RESTREAM" {
 			continue
 		}
-		entries = append(entries, entry{start, end, e.Summary, e.Genres})
+		entries = append(entries, entry{start, end, e.Summary, e.Description, e.Genres})
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].start.Before(entries[j].start)
 	})
 
-	// Find the longest start time string so the em-dash column lines up
-	maxStart := 0
-	for _, e := range entries {
-		if l := len(formatTime(e.start)); l > maxStart {
-			maxStart = l
-		}
-	}
-
-	// Find the longest end time string so the name column lines up
-	maxEnd := 0
-	for _, e := range entries {
-		if l := len(formatTime(e.end)); l > maxEnd {
-			maxEnd = l
-		}
-	}
-
 	var rows []string
 	for _, e := range entries {
 		s := formatTime(e.start)
 		en := formatTime(e.end)
 
-		row := fmt.Sprintf("%-*s — %-*s  %s", maxStart, s, maxEnd, en, e.name)
+		row := fmt.Sprintf("**%s–%s · %s**", s, en, e.name)
 
 		if len(e.genres) > 0 {
-			row += fmt.Sprintf("  [%s]", strings.Join(e.genres, ", "))
+			row += fmt.Sprintf(" [%s]", strings.Join(e.genres, ", "))
+		}
+
+		if desc := cleanDescription(e.description); desc != "" {
+			row += "\n" + desc
 		}
 
 		rows = append(rows, row)
 	}
 
-	schedule := strings.Join(rows, "\n")
-	message := fmt.Sprintf("Today at Lot Radio:\n```\n%s\n```", schedule)
+	schedule := strings.Join(rows, "\n\n")
+	message := fmt.Sprintf("Today at Lot Radio:\n\n%s", schedule)
 	return message, nil
 }
 
@@ -203,9 +225,10 @@ func getWebhookURL(ctx context.Context) (string, error) {
 	}
 
 	client := ssm.NewFromConfig(cfg)
+	paramName := ssmParamName
 	withDecryption := true
 	out, err := client.GetParameter(ctx, &ssm.GetParameterInput{
-		Name:           &[]string{ssmParamName}[0],
+		Name:           &paramName,
 		WithDecryption: &withDecryption,
 	})
 	if err != nil {
