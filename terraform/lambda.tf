@@ -21,11 +21,13 @@ resource "aws_lambda_function" "lambda" {
 }
 
 resource "aws_lambda_permission" "scheduler" {
+  for_each = local.schedules
+
   function_name = aws_lambda_function.lambda["scheduler"].function_name
-  statement_id  = "AllowEventBridgeInvoke"
+  statement_id  = "AllowEventBridgeInvoke-${each.key}"
   action        = "lambda:InvokeFunction"
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.daily.arn
+  source_arn    = aws_cloudwatch_event_rule.scheduler[each.key].arn
 }
 
 # Security is handled by Ed25519 signature verification in application code,

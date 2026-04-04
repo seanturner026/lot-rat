@@ -5,14 +5,18 @@ resource "aws_cloudwatch_log_group" "lambda" {
   retention_in_days = 1
 }
 
-resource "aws_cloudwatch_event_rule" "daily" {
-  name                = "${local.name}-daily"
-  description         = "Trigger ${local.name} scheduler daily at 9:30 AM EST"
-  schedule_expression = "cron(30 13 * * ? *)"
+resource "aws_cloudwatch_event_rule" "scheduler" {
+  for_each = local.schedules
+
+  name                = "${local.name}-${each.key}"
+  description         = each.value.description
+  schedule_expression = each.value.schedule_expression
 }
 
 resource "aws_cloudwatch_event_target" "scheduler" {
-  rule = aws_cloudwatch_event_rule.daily.name
+  for_each = local.schedules
+
+  rule = aws_cloudwatch_event_rule.scheduler[each.key].name
   arn  = aws_lambda_function.lambda["scheduler"].arn
 }
 

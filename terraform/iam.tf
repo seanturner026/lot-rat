@@ -21,8 +21,6 @@ resource "aws_iam_role_policy" "ssm" {
 }
 
 resource "aws_iam_role_policy" "receiver_ddb_write" {
-  for_each = local.lambdas
-
   name   = "ddb"
   role   = aws_iam_role.lambda["receiver"].name
   policy = data.aws_iam_policy_document.lambda_receiver_ddb_write.json

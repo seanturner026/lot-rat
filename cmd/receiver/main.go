@@ -158,8 +158,10 @@ func respond(status int, body string) events.LambdaFunctionURLResponse {
 
 func handler(ctx context.Context, r events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
 	if !verify(r) {
+		fmt.Println("signature verification failed")
 		return respond(http.StatusUnauthorized, `{"error":"invalid signature"}`), nil
 	}
+	fmt.Println("signature verified")
 
 	var ix interaction
 	if err := json.Unmarshal([]byte(r.Body), &ix); err != nil {
@@ -168,12 +170,14 @@ func handler(ctx context.Context, r events.LambdaFunctionURLRequest) (events.Lam
 
 	// Type 1 = PING — Discord sends this to verify the endpoint on setup.
 	if ix.Type == 1 {
+		fmt.Println("ping received, sending pong")
 		return respond(http.StatusOK, `{"type":1}`), nil
 	}
 
 	// Type 3 = MESSAGE_COMPONENT (button click).
 	if ix.Type == 3 && ix.Data != nil {
 		customID := ix.Data.CustomID
+		fmt.Printf("button click: custom_id=%s user_id=%s\n", customID, ix.userID())
 
 		// custom_id format: "remind:{unix_start_timestamp}:{show_name}"
 		if strings.HasPrefix(customID, "remind:") {
@@ -197,6 +201,7 @@ func handler(ctx context.Context, r events.LambdaFunctionURLRequest) (events.Lam
 				fmt.Fprintf(os.Stderr, "save reminder: %v\n", err)
 				return respond(http.StatusInternalServerError, `{"error":"internal error"}`), nil
 			}
+			fmt.Printf("reminder saved: user_id=%s show=%s unix=%d\n", userID, showName, showUnix)
 
 			showTime := time.Unix(showUnix, 0).In(mustLoadLocation("America/New_York"))
 			ackMsg := fmt.Sprintf("I'll send you a notification at some point before **%s** starts at %s, hopefully! Lol",
@@ -210,11 +215,13 @@ func handler(ctx context.Context, r events.LambdaFunctionURLRequest) (events.Lam
 					"flags":   64,
 				},
 			})
+			fmt.Printf("responding 200 to Discord: %s\n", string(body))
 			return respond(http.StatusOK, string(body)), nil
 		}
 	}
 
 	// Unknown interaction type — ACK.
+	fmt.Printf("unknown interaction type %d, sending ack\n", ix.Type)
 	return respond(http.StatusOK, `{"type":1}`), nil
 }
 
