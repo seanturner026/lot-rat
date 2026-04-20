@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/go-json-experiment/json"
 )
 
 const (
@@ -37,7 +38,7 @@ type Event struct {
 type (
 	discordPayload struct {
 		Content    string             `json:"content"`
-		Components []discordActionRow `json:"components,omitempty"`
+		Components []discordActionRow `json:"components,omitzero"`
 	}
 
 	discordActionRow struct {
@@ -345,7 +346,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build payload: %w", err)
 	}
 
-	fmt.Println(payload.Content)
+	slog.Info("schedule built", "content", payload.Content)
 
 	dcfg, err := getDiscordConfig(ctx)
 	if err != nil {
@@ -355,7 +356,7 @@ func run(ctx context.Context) error {
 	if err := postToChannel(ctx, dcfg.channelID, dcfg.botToken, payload); err != nil {
 		return fmt.Errorf("discord: %w", err)
 	}
-	fmt.Println("Message sent to Discord.")
+	slog.Info("message sent to discord")
 	return nil
 }
 
@@ -364,11 +365,13 @@ func handler(ctx context.Context) error {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
 		lambda.Start(handler)
 	} else {
 		if err := run(context.Background()); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			slog.Error("run failed", "error", err)
 			os.Exit(1)
 		}
 	}

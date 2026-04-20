@@ -19,8 +19,14 @@ build:
   for name in {{ lambdas }}; do
     echo "building $name..."
     mkdir -p bin/$name
-    GOARCH=arm64 GOOS=linux go build -o bin/$name/bootstrap ./cmd/$name/
+    GOARCH=arm64 GOOS=linux go build -ldflags="-s -w" -o bin/$name/bootstrap ./cmd/$name/
   done
+
+alias t := test
+[doc("run all tests")]
+[group('go')]
+test:
+  go test ./...
 
 alias r := run
 [doc("run scheduler locally")]
